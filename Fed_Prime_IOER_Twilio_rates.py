@@ -66,7 +66,7 @@ def lambda_handler(event, context):
     def send_email():
         COMMASPACE = ', '
         sender = 'koontz2k4@gmail.com'
-        gmail_password = 'threeoneeighty'
+        gmail_password = 'gmail password goes here'
         recipients = [os.environ['my_email'],os.environ['gjp3'],os.environ['rk44'],os.environ['dr11']]
     # Create the enclosing (outer) message
         outer = MIMEMultipart('alternative')
