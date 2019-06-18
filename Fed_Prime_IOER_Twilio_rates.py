@@ -7,16 +7,16 @@ Created on Sat Aug 25 13:11:35 2018
 
 import smtplib
 import sys
-import requests
-import bs4 
 import datetime
-from twilio.rest import Client
 import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from twilio.rest import Client
+import requests
+import bs4
 
 def lambda_handler(event, context):
-    
+
     client = Client(
         os.environ['TWILIO_ACCOUNT'],
         os.environ['TWILIO_TOKEN'],
@@ -27,8 +27,7 @@ def lambda_handler(event, context):
 
 #Step 0: Determine the URLs to scrape the data from
     fed_string = 'https://apps.newyorkfed.org/markets/autorates/fed%20funds'
-    #prime_string = "https://fred.stlouisfed.org/series/DPRIME"
-    prime_string = 'http://www.wsj.com/mdc/public/page/2_3020-moneyrate.html'
+    prime_string = "https://fred.stlouisfed.org/series/DPRIME"
     ioer_string = 'https://fred.stlouisfed.org/series/IOER'
 
 
@@ -47,8 +46,7 @@ def lambda_handler(event, context):
 #Step 3: Parse the page for the most recent rate, date, and the second most recent rate and date
     rate = fed.select('td.dirColTight.numData') #Fed data
     #date = fed.select('td.dirColLTight') #Fed data
-    #prime_rate = prime.select('td.series-obs.value') #Prime data from FRED
-    prime_rate = prime.select('td.num') #Prime data from WSJ
+    prime_rate = prime.select('td.series-obs.value') #Prime data from FRED
     ioer_rate = ioer.select('td.series-obs.value') #IOER data
 
     todays_ioer_rate = float(ioer_rate[0].getText()) #Current IOER Rate
@@ -64,21 +62,21 @@ def lambda_handler(event, context):
 
 
     def send_email():
-        COMMASPACE = ', '
+        comma_space = ', '
         sender = 'koontz2k4@gmail.com'
-        gmail_password = 'gmail password goes here'
-        recipients = [os.environ['my_email'],os.environ['gjp3'],os.environ['rk44'],os.environ['dr11']]
+        gmail_password = 'threeoneeighty'
+        recipients = [os.environ['my_email'], os.environ['gjp3'], os.environ['rk44'], os.environ['dr11']]
     # Create the enclosing (outer) message
         outer = MIMEMultipart('alternative')
         outer['Subject'] = 'Fed Funds, Prime and IOER Rates as of ' + now2
-        outer['To'] = COMMASPACE.join(recipients)
+        outer['To'] = comma_space.join(recipients)
         outer['From'] = sender
         outer.preamble = 'You will not see this in a MIME-aware mail reader.\n'
     # Create the body of the message
         body = MIMEText("Good morning! " + "\r\n"\
             "\r\n"\
             "The Fed Funds rate is: " + str(todays_fed_rate) + ". (Source: NY Fed)" + "\r\n"\
-            "The U.S. Prime rate is: " + str(todays_prime_rate) + ". (Source: WSJ)" + "\r\n"\
+            "The U.S. Prime rate is: " + str(todays_prime_rate) + ". (Source: FRED)" + "\r\n"\
             "The IOER rate is: " + str(todays_ioer_rate) + ". (Source: FRED)" + "\r\n"\
             "\r\n"\
             "-Ryan")
@@ -88,60 +86,60 @@ def lambda_handler(event, context):
 
     # Send the email
         try:
-            with smtplib.SMTP('smtp.gmail.com', 587) as s:
-                s.ehlo()
-                s.starttls()
-                s.ehlo()
-                s.login(sender, gmail_password)
-                s.sendmail(sender, recipients, composed)
-                s.close()
+            with smtplib.SMTP('smtp.gmail.com', 587) as send:
+                send.ehlo()
+                send.starttls()
+                send.ehlo()
+                send.login(sender, gmail_password)
+                send.sendmail(sender, recipients, composed)
+                send.close()
         except:
-                    print("Unable to send the email. Error: ", sys.exc_info()[0])
-                    raise
+            print("Unable to send the email. Error: ", sys.exc_info()[0])
+            raise
 
 
-#function to determine if the fed rate changed day over day   
-    def fed_rate_delta(): 
+#function to determine if the fed rate changed day over day
+    def fed_rate_delta():
         fed_delta = todays_fed_rate - yest_fed_rate
         fed_delta = round(fed_delta, 2)
         return fed_delta
-    
+
     def fed_up_or_down():
         if todays_fed_rate - yest_fed_rate > 0:
             return str("increased by ")
         else:
             return str("fell by ")
-    
-    
-#function to determine if the prime rate changed day over day   
+
+
+#function to determine if the prime rate changed day over day
     def prime_rate_delta():
         prime_delta = todays_prime_rate - yest_prime_rate
         prime_delta = round(prime_delta, 2)
         return prime_delta
-    
+
     def prime_up_or_down():
         if todays_prime_rate - yest_prime_rate > 0:
             return str("increased by ")
         else:
             return str("fell by ")
-        
-        
-#function to determine if the ioer rate changed day over day   
+
+
+#function to determine if the ioer rate changed day over day
     def ioer_rate_delta():
         ioer_delta = todays_ioer_rate - yest_ioer_rate
         ioer_delta = round(ioer_delta, 2)
         return ioer_delta
-    
+
     def ioer_up_or_down():
         if todays_ioer_rate - yest_ioer_rate > 0:
             return str("increased by ")
         else:
             return str("fell by ")
-        
+
 
     num_to_call = [os.environ['my_cell'], os.environ['riz_cell'], os.environ['greg_cell']]
-    
-    
+
+
 #If the ioer rate changes, send a text message to riz, greg, and myself.
     def send_ioer_text():
         if not ioer_rate_delta() == 0:
@@ -176,13 +174,12 @@ def lambda_handler(event, context):
                     body="Heads up! The Prime Rate " + prime_up_or_down() + str(prime_rate_delta()) \
                     + ". The current Prime rate is " + str(todays_prime_rate) \
                     + ". Please see " + prime_string + " for details.")
-      
-        
-    def main():
-        send_ioer_text()
-        send_fed_text()
-        send_prime_text()
-        send_email()
 
-    main()
 
+    #def main():
+    send_ioer_text()
+    send_fed_text()
+    send_prime_text()
+    send_email()
+
+    #main()
