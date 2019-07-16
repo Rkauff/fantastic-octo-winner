@@ -5,17 +5,17 @@ Created on Sat Aug 25 13:11:35 2018
 @author: Ryan
 """
 
-import smtplib
-import sys
 import datetime
 import os
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import json
 from twilio.rest import Client
 import requests
 import bs4
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 def lambda_handler(event, context):
+    """Main Function in the Lambda"""
 
     client = Client(
         os.environ['TWILIO_ACCOUNT'],
@@ -60,46 +60,8 @@ def lambda_handler(event, context):
     yest_prime_rate = float(prime_rate[3].getText()) #Yesterday's Prime Rate
     #todays_prime_date = prime_date[3].getText() #As of date
 
-
-    def send_email():
-        comma_space = ', '
-        sender = 'koontz2k4@gmail.com'
-        gmail_password = 'password'
-        recipients = [os.environ['my_email'], os.environ['gjp3'], os.environ['rk44'], os.environ['dr11']]
-    # Create the enclosing (outer) message
-        outer = MIMEMultipart('alternative')
-        outer['Subject'] = 'Fed Funds, Prime and IOER Rates as of ' + now2
-        outer['To'] = comma_space.join(recipients)
-        outer['From'] = sender
-        outer.preamble = 'You will not see this in a MIME-aware mail reader.\n'
-    # Create the body of the message
-        body = MIMEText("Good morning! " + "\r\n"\
-            "\r\n"\
-            "The Fed Funds rate is: " + str(todays_fed_rate) + ". (Source: NY Fed)" + "\r\n"\
-            "The U.S. Prime rate is: " + str(todays_prime_rate) + ". (Source: FRED)" + "\r\n"\
-            "The IOER rate is: " + str(todays_ioer_rate) + ". (Source: FRED)" + "\r\n"\
-            "\r\n"\
-            "-Ryan")
-        outer.attach(body)
-
-        composed = outer.as_string()
-
-    # Send the email
-        try:
-            with smtplib.SMTP('smtp.gmail.com', 587) as send:
-                send.ehlo()
-                send.starttls()
-                send.ehlo()
-                send.login(sender, gmail_password)
-                send.sendmail(sender, recipients, composed)
-                send.close()
-        except:
-            print("Unable to send the email. Error: ", sys.exc_info()[0])
-            raise
-
-
-#function to determine if the fed rate changed day over day
     def fed_rate_delta():
+        """#function to determine if the fed rate changed day over day"""
         fed_delta = todays_fed_rate - yest_fed_rate
         fed_delta = round(fed_delta, 2)
         return fed_delta
@@ -110,9 +72,8 @@ def lambda_handler(event, context):
         else:
             return str("fell by ")
 
-
-#function to determine if the prime rate changed day over day
     def prime_rate_delta():
+        """function to determine if the prime rate changed day over day"""
         prime_delta = todays_prime_rate - yest_prime_rate
         prime_delta = round(prime_delta, 2)
         return prime_delta
@@ -123,9 +84,8 @@ def lambda_handler(event, context):
         else:
             return str("fell by ")
 
-
-#function to determine if the ioer rate changed day over day
     def ioer_rate_delta():
+        """function to determine if the ioer rate changed day over day"""
         ioer_delta = todays_ioer_rate - yest_ioer_rate
         ioer_delta = round(ioer_delta, 2)
         return ioer_delta
@@ -136,14 +96,37 @@ def lambda_handler(event, context):
         else:
             return str("fell by ")
 
+    def rate_choice():
+        if todays_ioer_rate < todays_fed_rate:
+            return str("Use the Fed Funds Rate. It's higher by " + \
+                   str(abs(round(todays_ioer_rate - todays_fed_rate, 2))))
+        else:
+            return str("Use the IOER Rate. It's higher by " + \
+                   str(abs(round(todays_fed_rate - todays_ioer_rate, 2))))
 
-    num_to_call = [os.environ['my_cell'], os.environ['riz_cell'], os.environ['greg_cell']]
+    def sendgrid_email():
+        """function to use the Sendgrid email API. This replaced the Gmail
+        code I originally wrote."""
+        message = Mail(
+            from_email="koontz2k4@gmail.com",
+            to_emails=[os.environ['my_email'], os.environ['gjp3'],\
+                os.environ['rk44'], os.environ['dr11']],
+            subject='Fed Funds, Prime and IOER Rates as of ' + now2,
+            html_content='<p>Good morning! ' '<br />' '<br />'\
+            "The Fed Funds rate is: " + str(todays_fed_rate) + ". (Source: NY Fed)" + '<br />'\
+            "The U.S. Prime rate is: " + str(todays_prime_rate) + ". (Source: FRED)" + '<br />'\
+            "The IOER rate is: " + str(todays_ioer_rate) + ". (Source: FRED)" + '<br />' '<br />'\
+            + str(rate_choice()) + '<br />' '<br />'\
+            "-Ryan</p>")
+        s_g = SendGridAPIClient(os.environ['SENDGRID_KEY'])
+        s_g.send(message)
 
+    num_to_text = os.environ['my_cell'], os.environ['riz_cell'], os.environ['greg_cell']
 
-#If the ioer rate changes, send a text message to riz, greg, and myself.
     def send_ioer_text():
+        """If the ioer rate changes, send a text message to riz, greg, and myself."""
         if not ioer_rate_delta() == 0:
-            for number in num_to_call:
+            for number in num_to_text:
                 client.messages.create(
                     to=number,
                     from_="+16305184064",
@@ -152,34 +135,41 @@ def lambda_handler(event, context):
                     + ". Please see " + ioer_string + " for details. ")
 
 
-#If the fed rate changes, send a text message to riz, greg, and myself.
     def send_fed_text():
+        """If the fed rate changes, send a text message to riz, greg, and myself."""
         if not fed_rate_delta() == 0:
-            for number in num_to_call:
+            for number in num_to_text:
                 client.messages.create(
                     to=number,
                     from_="+16305184064",
-                    body="Heads up! The Fed Rate " + fed_up_or_down() + str(fed_rate_delta()) \
+                    body="Heads up! The Fed Rate " + fed_up_or_down() \
+                    + str(fed_rate_delta()) \
                     + ". The current Fed rate is " + str(todays_fed_rate) \
                     + ". Please see " + fed_string + " for details.")
 
 
-#If the prime rate changes, send a text message to riz, greg, and myself.
     def send_prime_text():
+        """If the prime rate changes, send a text message to riz, greg, and myself."""
         if not prime_rate_delta() == 0:
-            for number in num_to_call:
+            for number in num_to_text:
                 client.messages.create(
                     to=number,
                     from_="+16305184064",
-                    body="Heads up! The Prime Rate " + prime_up_or_down() + str(prime_rate_delta()) \
+                    body="Heads up! The Prime Rate " + prime_up_or_down() \
+                    + str(prime_rate_delta()) \
                     + ". The current Prime rate is " + str(todays_prime_rate) \
                     + ". Please see " + prime_string + " for details.")
 
-
-    #def main():
+    sendgrid_email()
     send_ioer_text()
     send_fed_text()
     send_prime_text()
-    send_email()
 
-    #main()
+    #The API component:
+    return {
+        "body": json.dumps("Good morning! "\
+            "The Fed Funds rate is: " + str(todays_fed_rate) + ". (Source: NY Fed) " +\
+            "The U.S. Prime rate is: " + str(todays_prime_rate) + ". (Source: FRED) " +\
+            "The IOER rate is: " + str(todays_ioer_rate) + ". (Source: FRED) " +\
+            str(rate_choice()) + " -Ryan")
+    }
