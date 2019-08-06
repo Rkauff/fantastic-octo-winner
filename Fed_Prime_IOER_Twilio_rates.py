@@ -56,8 +56,8 @@ def lambda_handler(event, context):
     yest_fed_rate = float(rate[6].getText()) #Yesterday's Fed Rate
     #todays_date = str(date[0].getText()) #Current Fed Date
 
-    todays_prime_rate = float(prime_rate[2].getText()) #Current Prime Rate
-    yest_prime_rate = float(prime_rate[3].getText()) #Yesterday's Prime Rate
+    todays_prime_rate = float(prime_rate[0].getText()) #Current Prime Rate
+    yest_prime_rate = float(prime_rate[1].getText()) #Yesterday's Prime Rate
     #todays_prime_date = prime_date[3].getText() #As of date
 
     def fed_rate_delta():
