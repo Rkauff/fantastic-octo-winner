@@ -110,7 +110,7 @@ def lambda_handler(event, context):
         message = Mail(
             from_email="koontz2k4@gmail.com",
             to_emails=[os.environ['my_email'], os.environ['gjp3'],\
-                os.environ['rk44'], os.environ['dr11']],
+                os.environ['rk44'], os.environ['dr11'], os.environ['hst1']],
             subject='Fed Funds, Prime and IOER Rates as of ' + now2,
             html_content='<p>Good morning! ' '<br />' '<br />'\
             "The Fed Funds rate is: " + str(todays_fed_rate) + ". (Source: NY Fed)" + '<br />'\
@@ -121,10 +121,10 @@ def lambda_handler(event, context):
         s_g = SendGridAPIClient(os.environ['SENDGRID_KEY'])
         s_g.send(message)
 
-    num_to_text = os.environ['my_cell'], os.environ['riz_cell'], os.environ['greg_cell']
+    num_to_text = os.environ['my_cell'], os.environ['riz_cell'], os.environ['greg_cell'], os.environ['harsh_cell']
 
     def send_ioer_text():
-        """If the ioer rate changes, send a text message to riz, greg, and myself."""
+        """If the ioer rate changes, send a text message to riz, greg, harsh, and myself."""
         if not ioer_rate_delta() == 0:
             for number in num_to_text:
                 client.messages.create(
@@ -136,7 +136,7 @@ def lambda_handler(event, context):
 
 
     def send_fed_text():
-        """If the fed rate changes, send a text message to riz, greg, and myself."""
+        """If the fed rate changes, send a text message to riz, greg, harsh, and myself."""
         if not fed_rate_delta() == 0:
             for number in num_to_text:
                 client.messages.create(
@@ -149,7 +149,7 @@ def lambda_handler(event, context):
 
 
     def send_prime_text():
-        """If the prime rate changes, send a text message to riz, greg, and myself."""
+        """If the prime rate changes, send a text message to riz, greg, harsh,and myself."""
         if not prime_rate_delta() == 0:
             for number in num_to_text:
                 client.messages.create(
