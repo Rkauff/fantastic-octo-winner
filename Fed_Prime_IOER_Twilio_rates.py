@@ -27,6 +27,7 @@ def lambda_handler(event, context):
 
 #Step 0: Determine the URLs to scrape the data from
     fed_string = 'https://apps.newyorkfed.org/markets/autorates/fed%20funds'
+    sofr_string = "https://apps.newyorkfed.org/markets/autorates/sofr"
     prime_string = "https://fred.stlouisfed.org/series/DPRIME"
     ioer_string = 'https://fred.stlouisfed.org/series/IOER'
 
@@ -35,19 +36,22 @@ def lambda_handler(event, context):
     fed_url = requests.get(fed_string)
     prime_url = requests.get(prime_string)
     ioer_url = requests.get(ioer_string)
+    sofr_url = requests.get(sofr_string)
 
 
 #Step 2: Pass only the text element of the page to a variable
     fed = bs4.BeautifulSoup(fed_url.text, 'html.parser')
     prime = bs4.BeautifulSoup(prime_url.text, 'html.parser')
     ioer = bs4.BeautifulSoup(ioer_url.text, 'html.parser')
+    sofr = bs4.BeautifulSoup(sofr_url.text, 'html.parser')
 
 
 #Step 3: Parse the page for the most recent rate, date, and the second most recent rate and date
     rate = fed.select('td.dirColTight.numData') #Fed data
     #date = fed.select('td.dirColLTight') #Fed data
-    prime_rate = prime.select('td.series-obs.value') #Prime data from FRED
+    prime_rate = prime.select('td.series-obs.value') #Prime data
     ioer_rate = ioer.select('td.series-obs.value') #IOER data
+    sofr_rate = sofr.select('td.dirColTight.numData')
 
     todays_ioer_rate = float(ioer_rate[0].getText()) #Current IOER Rate
     yest_ioer_rate = float(ioer_rate[1].getText()) #Yesterday's IOER Rate
@@ -56,9 +60,27 @@ def lambda_handler(event, context):
     yest_fed_rate = float(rate[6].getText()) #Yesterday's Fed Rate
     #todays_date = str(date[0].getText()) #Current Fed Date
 
-    todays_prime_rate = float(prime_rate[0].getText()) #Current Prime Rate
-    yest_prime_rate = float(prime_rate[1].getText()) #Yesterday's Prime Rate
+    todays_prime_rate = prime_rate[0].getText() #Current Prime Rate
+    yest_prime_rate = prime_rate[1].getText() #Yesterday's Prime Rate
     #todays_prime_date = prime_date[3].getText() #As of date
+
+
+    #If/else structure to capture the scenario where the Fed fat fingers the prime rate and makes it "."
+    if todays_prime_rate == ".":
+        todays_prime_rate = yest_prime_rate
+        todays_prime_rate = float(todays_prime_rate) #Current Prime Rate
+        yest_prime_rate = float(yest_prime_rate) #Yesterday's Prime Rate
+    elif yest_prime_rate == ".":
+        yest_prime_rate = todays_prime_rate
+        todays_prime_rate = float(todays_prime_rate) #Current Prime Rate
+        yest_prime_rate = float(yest_prime_rate) #Yesterday's Prime Rate
+    else:
+        todays_prime_rate = float(todays_prime_rate) #Current Prime Rate
+        yest_prime_rate = float(yest_prime_rate) #Yesterday's Prime Rate
+
+
+    todays_sofr_rate = float(sofr_rate[0].getText())
+    #yest_sofr_rate = float(sofr_rate[6].getText())
 
     def fed_rate_delta():
         """#function to determine if the fed rate changed day over day"""
@@ -96,12 +118,30 @@ def lambda_handler(event, context):
         else:
             return str("fell by ")
 
+    '''
+    #Not currently in use. If the SOFR rate is ever needed, uncomment these lines.
+    def sofr_rate_delta():
+        """function to determine if the ioer rate changed day over day"""
+        sofr_delta = todays_sofr_rate - yest_sofr_rate
+        sofr_delta = round(sofr_delta, 2)
+        return sofr_delta
+
+    def sofr_up_or_down():
+        if todays_sofr_rate - yest_sofr_rate > 0:
+            return str("increased by ")
+        else:
+            return str("fell by ")
+    '''
+
     def rate_choice():
         if todays_ioer_rate < todays_fed_rate:
             return str("Use the Fed Funds Rate. It's higher by " + \
                    str(abs(round(todays_ioer_rate - todays_fed_rate, 2))))
-        else:
+        elif todays_ioer_rate > todays_fed_rate:
             return str("Use the IOER Rate. It's higher by " + \
+                   str(abs(round(todays_fed_rate - todays_ioer_rate, 2))))
+        else:
+            return str("Fed Funds matches IOER. Difference: " + \
                    str(abs(round(todays_fed_rate - todays_ioer_rate, 2))))
 
     def sendgrid_email():
@@ -114,6 +154,7 @@ def lambda_handler(event, context):
             subject='Fed Funds, Prime and IOER Rates as of ' + now2,
             html_content='<p>Good morning! ' '<br />' '<br />'\
             "The Fed Funds rate is: " + str(todays_fed_rate) + ". (Source: NY Fed)" + '<br />'\
+            "The SOFR rate is: " + str(todays_sofr_rate) + ". (Source: NY Fed)" + '<br />'\
             "The U.S. Prime rate is: " + str(todays_prime_rate) + ". (Source: FRED)" + '<br />'\
             "The IOER rate is: " + str(todays_ioer_rate) + ". (Source: FRED)" + '<br />' '<br />'\
             + str(rate_choice()) + '<br />' '<br />'\
@@ -121,10 +162,11 @@ def lambda_handler(event, context):
         s_g = SendGridAPIClient(os.environ['SENDGRID_KEY'])
         s_g.send(message)
 
-    num_to_text = os.environ['my_cell'], os.environ['riz_cell'], os.environ['greg_cell'], os.environ['harsh_cell']
+    num_to_text = os.environ['my_cell'], os.environ['riz_cell'],\
+        os.environ['greg_cell'], os.environ['harsh_cell']
 
     def send_ioer_text():
-        """If the ioer rate changes, send a text message to riz, greg, harsh, and myself."""
+        """If the ioer rate changes, send a text message to riz, greg, and myself."""
         if not ioer_rate_delta() == 0:
             for number in num_to_text:
                 client.messages.create(
@@ -136,7 +178,7 @@ def lambda_handler(event, context):
 
 
     def send_fed_text():
-        """If the fed rate changes, send a text message to riz, greg, harsh, and myself."""
+        """If the fed rate changes, send a text message to riz, greg, and myself."""
         if not fed_rate_delta() == 0:
             for number in num_to_text:
                 client.messages.create(
@@ -149,7 +191,7 @@ def lambda_handler(event, context):
 
 
     def send_prime_text():
-        """If the prime rate changes, send a text message to riz, greg, harsh,and myself."""
+        """If the prime rate changes, send a text message to riz, greg, and myself."""
         if not prime_rate_delta() == 0:
             for number in num_to_text:
                 client.messages.create(
@@ -160,10 +202,26 @@ def lambda_handler(event, context):
                     + ". The current Prime rate is " + str(todays_prime_rate) \
                     + ". Please see " + prime_string + " for details.")
 
+    '''
+    #Not currently in use. If the SOFR rate is ever needed, uncomment these lines.
+    def send_sofr_text():
+        """If the sofr rate changes, send a text message to riz, greg, and myself."""
+        if not sofr_rate_delta() == 0:
+            for number in num_to_text:
+                client.messages.create(
+                    to=number,
+                    from_="+16305184064",
+                    body="Heads up! The SOFR Rate " + sofr_up_or_down() \
+                    + str(sofr_rate_delta()) \
+                    + ". The current Prime rate is " + str(todays_sofr_rate) \
+                    + ". Please see " + sofr_string + " for details.")
+    '''
+
     sendgrid_email()
     send_ioer_text()
     send_fed_text()
     send_prime_text()
+    #send_sofr_text() Not currently in use yet. If needed, uncomment this line.
 
     #The API component:
     return {
@@ -171,5 +229,6 @@ def lambda_handler(event, context):
             "The Fed Funds rate is: " + str(todays_fed_rate) + ". (Source: NY Fed) " +\
             "The U.S. Prime rate is: " + str(todays_prime_rate) + ". (Source: FRED) " +\
             "The IOER rate is: " + str(todays_ioer_rate) + ". (Source: FRED) " +\
+            "The SOFR rate is: " + str(todays_sofr_rate) + ". (Source: NY Fed) " +\
             str(rate_choice()) + " -Ryan")
     }
